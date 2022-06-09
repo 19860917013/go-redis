@@ -23,6 +23,7 @@ type EchoClient struct {
 
 func (e *EchoClient) Close() error {
 	// 等待 10s 然后关闭 Conn
+	// 没超时的情况下就是一个正常的 Wait 操作 等待下面的 Add 和 Done
 	e.Waiting.WaitWithTimeout(10 * time.Second)
 	// 改成 _ 就不会报错 因为关闭了错了就错了
 	_ = e.Conn.Close()
@@ -32,6 +33,7 @@ func (e *EchoClient) Close() error {
 /*
 echo 回复 回响
 EchoHandler 最简单的回发业务 测试
+相当于简单的服务端
 */
 
 type EchoHandler struct {
@@ -51,6 +53,7 @@ func (handler *EchoHandler) Handle(ctx context.Context, conn net.Conn) {
 		_ = conn.Close()
 	}
 
+	// conn 传进来的是 客户端结构体中的 一个 conn
 	client := &EchoClient{
 		Conn: conn,
 	}

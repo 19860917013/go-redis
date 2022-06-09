@@ -14,5 +14,5 @@ redis的核心业务引擎
 
 type Handler interface {
 	Handle(ctx context.Context, conn net.Conn)
-	Close() error
+	Close() error // 实现了 Closer 接口
 }
