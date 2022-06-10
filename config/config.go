@@ -16,6 +16,7 @@ import (
 */
 
 // ServerProperties defines global config properties
+// `cfg:"bind"` 注解
 type ServerProperties struct {
 	Bind           string `cfg:"bind"`
 	Port           int    `cfg:"port"`
@@ -23,7 +24,7 @@ type ServerProperties struct {
 	AppendFilename string `cfg:"appendFilename"`
 	MaxClients     int    `cfg:"maxclients"`
 	RequirePass    string `cfg:"requirepass"`
-	Databases      int    `cfg:"databases"`
+	Databases      int    `cfg:"databases"` // 映射全局 config 文件 16
 
 	Peers []string `cfg:"peers"`
 	Self  string   `cfg:"self"`
