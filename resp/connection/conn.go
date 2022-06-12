@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-// Connection represents a connection with a redis-cli
+// Connection redis-cli 协议层对连接的描述
 type Connection struct {
 	conn net.Conn
 
-	// waiting until reply finished
+	// 关闭服务前 进行处理
 	waitingReply wait.Wait
 
-	// lock while handler sending response
+	// 操作一个客户上一把锁 并发问题
 	mu sync.Mutex
 
 	// subscribing channels
@@ -33,12 +33,12 @@ type Connection struct {
 	selectedDB int
 }
 
-// RemoteAddr returns the remote network address
+// RemoteAddr 看一下客户端的地址
 func (c *Connection) RemoteAddr() net.Addr {
 	return c.conn.RemoteAddr()
 }
 
-// Close disconnect with the client
+// Close 等待之后关闭
 func (c *Connection) Close() error {
 	c.waitingReply.WaitWithTimeout(10 * time.Second)
 	_ = c.conn.Close()
@@ -57,6 +57,7 @@ func (c *Connection) Write(b []byte) error {
 	if len(b) == 0 {
 		return nil
 	}
+	// 在同一时刻 只能有一个协程对客户端写数据
 	c.mu.Lock()
 	c.waitingReply.Add(1)
 	defer func() {

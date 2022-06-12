@@ -1,6 +1,7 @@
 package database
 
 // 测试 的 EchoDatabase
+// 测试协议的编码解码
 
 import (
 	"go-redis/interface/resp"

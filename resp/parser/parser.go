@@ -25,7 +25,7 @@ type readState struct {
 	expectedArgsCount int      // 应该有几个参数
 	msgType           byte     // 用户信息类型
 	args              [][]byte // 用户传过来的数据
-	bulkLen           int64    //字节组的长度
+	bulkLen           int64    //字节组的长度  预设 读取的长度
 }
 
 // finished 解析是否完成
@@ -38,13 +38,15 @@ func (s *readState) finished() bool {
 func ParseStream(reader io.Reader) <-chan *Payload {
 	// 通过管道交付 不用卡在这
 	ch := make(chan *Payload)
+	// 每一个用户一个解析器
 	go parse0(reader, ch)
 	return ch
 }
 
-// io.Reader 读取客户端的字节流
+// io.Reader 读取客户端的字节流 解析器
 func parse0(reader io.Reader, ch chan<- *Payload) {
 	defer func() {
+		// 处理下 recover 中的 error
 		if err := recover(); err != nil {
 			logger.Error(string(debug.Stack()))
 		}
@@ -53,12 +55,13 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 	var state readState
 	var err error
 	var msg []byte
+	// 只要连接之后 会处于这个死循环中 断开之后才会退出
 	for {
 		// read line
 		var ioErr bool
 		msg, ioErr, err = readLine(bufReader, &state)
 		if err != nil {
-			if ioErr { // encounter io err, stop read
+			if ioErr { // IO 错误 塞管道关闭退出
 				ch <- &Payload{
 					Err: err,
 				}
@@ -73,11 +76,11 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 			continue
 		}
 
-		// parse line
+		// 最大的判断是从 是否开启多行模式 作为分支
 		if !state.readingMultiLine {
 			// receive new response
 			if msg[0] == '*' {
-				// multi bulk reply
+				// parseMultiBulkHeader 中会将状态置为多行模式
 				err = parseMultiBulkHeader(msg, &state)
 				if err != nil {
 					ch <- &Payload{
@@ -87,6 +90,7 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 					continue
 				}
 				if state.expectedArgsCount == 0 {
+					// 是给 Redis 底层返回一个信息 这里不是给 用户返回
 					ch <- &Payload{
 						Data: &reply.EmptyMultiBulkReply{},
 					}
@@ -106,7 +110,7 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 					ch <- &Payload{
 						Data: &reply.NullBulkReply{},
 					}
-					state = readState{} // reset state
+					state = readState{} // 重置位一个新的状态进行服务
 					continue
 				}
 			} else {
@@ -120,7 +124,7 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 				continue
 			}
 		} else {
-			// receive following bulk reply
+			// 多行模式使用 readBody
 			err = readBody(msg, &state)
 			if err != nil {
 				ch <- &Payload{
@@ -131,6 +135,7 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 			}
 			// if sending finished
 			if state.finished() {
+				// 定义一个 Reply 如果解析完成塞进管道
 				var result resp.Reply
 				if state.msgType == '*' {
 					result = reply.MakeMultiBulkReply(state.args)
@@ -147,9 +152,18 @@ func parse0(reader io.Reader, ch chan<- *Payload) {
 	}
 }
 
+// readLine 从 IO 中取出一行 以 \n 结尾
+// bool 是否为 IO 错误
+// error 错误本身
 func readLine(bufReader *bufio.Reader, state *readState) ([]byte, bool, error) {
 	var msg []byte
 	var err error
+
+	/*
+	*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n
+	*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n
+	 */
+
 	if state.bulkLen == 0 { // read normal line
 		msg, err = bufReader.ReadBytes('\n')
 		if err != nil {
@@ -174,9 +188,11 @@ func readLine(bufReader *bufio.Reader, state *readState) ([]byte, bool, error) {
 	return msg, false, nil
 }
 
+// parseMultiBulkHeader  多个字符串的头  *3 把数组解析出来 并且相应的改变状态
 func parseMultiBulkHeader(msg []byte, state *readState) error {
 	var err error
 	var expectedLine uint64
+	// msg[1:len(msg)-2] 这样处理 300 这种多位数字
 	expectedLine, err = strconv.ParseUint(string(msg[1:len(msg)-2]), 10, 32)
 	if err != nil {
 		return errors.New("protocol error: " + string(msg))
@@ -185,7 +201,7 @@ func parseMultiBulkHeader(msg []byte, state *readState) error {
 		state.expectedArgsCount = 0
 		return nil
 	} else if expectedLine > 0 {
-		// first line of multi bulk reply
+		// *3 说明后面 set k v  3个结构
 		state.msgType = msg[0]
 		state.readingMultiLine = true
 		state.expectedArgsCount = int(expectedLine)
@@ -196,6 +212,8 @@ func parseMultiBulkHeader(msg []byte, state *readState) error {
 	}
 }
 
+// parseBulkHeader 单个字符串的头  $n \r\n  "  " \r\n  PING
+// 初始化解析时调用的方法 如果开始是 * 后来是 $ 就不走这个方法
 func parseBulkHeader(msg []byte, state *readState) error {
 	var err error
 	state.bulkLen, err = strconv.ParseInt(string(msg[1:len(msg)-2]), 10, 64)
@@ -215,8 +233,12 @@ func parseBulkHeader(msg []byte, state *readState) error {
 	}
 }
 
+// parseSingleLineReply 客户端发送 +OK -ERR 等
+// 比较简单一行解析完返回 Reply 即可
 func parseSingleLineReply(msg []byte) (resp.Reply, error) {
+	// TrimSuffix 把后缀干掉
 	str := strings.TrimSuffix(string(msg), "\r\n")
+	// Reply 同时适用于服务端客户端
 	var result resp.Reply
 	switch msg[0] {
 	case '+': // status reply
@@ -241,7 +263,8 @@ func parseSingleLineReply(msg []byte) (resp.Reply, error) {
 	return result, nil
 }
 
-// read the non-first lines of multi bulk reply or bulk reply
+// readBody 开头被上面几种方法解决完 该方法解决后面的主体部分
+// 可能出现情况   * 干掉后剩下 $ 	或者剩下 PING (不是 $ 的情况)
 func readBody(msg []byte, state *readState) error {
 	line := msg[0 : len(msg)-2]
 	var err error
@@ -251,7 +274,7 @@ func readBody(msg []byte, state *readState) error {
 		if err != nil {
 			return errors.New("protocol error: " + string(msg))
 		}
-		if state.bulkLen <= 0 { // null bulk in multi bulks
+		if state.bulkLen <= 0 { //  $0\r\n
 			state.args = append(state.args, []byte{})
 			state.bulkLen = 0
 		}

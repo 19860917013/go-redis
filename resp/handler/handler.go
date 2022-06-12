@@ -39,6 +39,7 @@ func MakeHandler() *RespHandler {
 	}
 }
 
+// closeClient 关闭一个客户端的连接
 func (h *RespHandler) closeClient(client *connection.Connection) {
 	_ = client.Close()
 	h.db.AfterClientClose(client)
@@ -56,8 +57,10 @@ func (h *RespHandler) Handle(ctx context.Context, conn net.Conn) {
 	h.activeConn.Store(client, 1)
 
 	ch := parser.ParseStream(conn)
+	// 监听管道 相当于死循环
 	for payload := range ch {
 		if payload.Err != nil {
+			// payload.Err == io.EOF 相当于用户端关闭
 			if payload.Err == io.EOF ||
 				payload.Err == io.ErrUnexpectedEOF ||
 				strings.Contains(payload.Err.Error(), "use of closed network connection") {
@@ -66,7 +69,7 @@ func (h *RespHandler) Handle(ctx context.Context, conn net.Conn) {
 				logger.Info("connection closed: " + client.RemoteAddr().String())
 				return
 			}
-			// protocol err
+			// 出现协议错误写回客户端即可
 			errReply := reply.MakeErrReply(payload.Err.Error())
 			err := client.Write(errReply.ToBytes())
 			if err != nil {
@@ -99,11 +102,13 @@ func (h *RespHandler) Close() error {
 	logger.Info("handler shutting down...")
 	h.closing.Set(true)
 	// TODO: concurrent wait
+	// 每一个客户端连接关闭
 	h.activeConn.Range(func(key interface{}, val interface{}) bool {
 		client := key.(*connection.Connection)
 		_ = client.Close()
 		return true
 	})
+	// db Redis 业务层
 	h.db.Close()
 	return nil
 }

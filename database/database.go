@@ -49,6 +49,7 @@ func (mdb *Database) Exec(c resp.Connection, cmdLine [][]byte) (result resp.Repl
 	// 一般的指令
 	dbIndex := c.GetDBIndex()
 	selectedDB := mdb.dbSet[dbIndex]
+	// 这个地方可以用来断点测试
 	return selectedDB.Exec(c, cmdLine)
 }
 
