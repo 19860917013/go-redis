@@ -1,6 +1,7 @@
 package database
 
 import (
+	"go-redis/aof"
 	"go-redis/config"
 	"go-redis/interface/resp"
 	"go-redis/lib/logger"
@@ -11,7 +12,8 @@ import (
 
 // Database 成员由 DB 组成
 type Database struct {
-	dbSet []*DB
+	dbSet      []*DB
+	aofHandler *aof.AofHandler // 加个参数名 不加参数名就成组合了
 }
 
 // NewDatabase 初始化
@@ -25,6 +27,22 @@ func NewDatabase() *Database {
 		singleDB := makeDB()
 		singleDB.index = i
 		mdb.dbSet[i] = singleDB
+	}
+	if config.Properties.AppendOnly {
+		aofHandler, err := aof.NewAOFHandler(mdb)
+		if err != nil {
+			// 因为这是在启动的过程中报 panic
+			panic(err)
+		}
+		mdb.aofHandler = aofHandler
+		for _, db := range mdb.dbSet {
+			// 引用第二遍时 发生逃逸到了 堆上
+			// 闭包问题 引用外部的变量会变
+			sdb := db // sdb 在引用第二次时 可能名字相同 但是地址已经不同了
+			sdb.addAof = func(line CmdLine) {
+				mdb.aofHandler.AddAof(sdb.index, line)
+			}
+		}
 	}
 	return mdb
 }
