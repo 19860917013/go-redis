@@ -22,6 +22,7 @@ func fileExists(filename string) bool {
 }
 
 func main() {
+	// TODO : redis 集群操作
 	logger.Setup(&logger.Settings{
 		Path:       "logs",
 		Name:       "godis",
