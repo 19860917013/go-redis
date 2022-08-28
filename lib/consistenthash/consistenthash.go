@@ -18,7 +18,7 @@ func NewNodeMap(fn HashFunc) *NodeMap {
 		hashFunc:    fn,
 		nodehashMap: make(map[int]string),
 	}
-	if m.hashFunc != nil {
+	if m.hashFunc == nil {
 		m.hashFunc = crc32.ChecksumIEEE
 	}
 	return m

@@ -35,7 +35,8 @@ func MakeClusterDatabase() *ClusterDatabase {
 	nodes = append(nodes, config.Properties.Self)
 	cluster.peerPicker.AddNode(nodes...)
 	for _, peer := range config.Properties.Peers {
-		pool.NewObjectPoolWithDefaultConfig(context.Background(), &connectionFactory{Peer: peer})
+		cluster.peerConnection[peer] = pool.NewObjectPoolWithDefaultConfig(
+			context.Background(), &connectionFactory{Peer: peer})
 	}
 	cluster.nodes = nodes
 	return cluster
