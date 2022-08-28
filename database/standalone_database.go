@@ -10,15 +10,15 @@ import (
 	"strings"
 )
 
-// Database 成员由 DB 组成
-type Database struct {
+// StandaloneDatabase 成员由 DB 组成
+type StandaloneDatabase struct {
 	dbSet      []*DB
 	aofHandler *aof.AofHandler // 加个参数名 不加参数名就成组合了
 }
 
-// NewDatabase 初始化
-func NewDatabase() *Database {
-	mdb := &Database{}
+// NewStandaloneDatabase 初始化
+func NewStandaloneDatabase() *StandaloneDatabase {
+	mdb := &StandaloneDatabase{}
 	if config.Properties.Databases == 0 {
 		config.Properties.Databases = 16
 	}
@@ -49,7 +49,7 @@ func NewDatabase() *Database {
 
 // Exec 把用户的指令转交给 分 DB
 // parameter `cmdLine` contains command and its arguments, for example: "set key value"
-func (mdb *Database) Exec(c resp.Connection, cmdLine [][]byte) (result resp.Reply) {
+func (mdb *StandaloneDatabase) Exec(c resp.Connection, cmdLine [][]byte) (result resp.Reply) {
 	defer func() {
 		if err := recover(); err != nil {
 			logger.Error(err)
@@ -71,16 +71,16 @@ func (mdb *Database) Exec(c resp.Connection, cmdLine [][]byte) (result resp.Repl
 	return selectedDB.Exec(c, cmdLine)
 }
 
-func (mdb *Database) Close() {
+func (mdb *StandaloneDatabase) Close() {
 
 }
 
-func (mdb *Database) AfterClientClose(c resp.Connection) {
+func (mdb *StandaloneDatabase) AfterClientClose(c resp.Connection) {
 }
 
 // execSelect 用户切换 DB 时执行的指令
 // select 1、2
-func execSelect(c resp.Connection, mdb *Database, args [][]byte) resp.Reply {
+func execSelect(c resp.Connection, mdb *StandaloneDatabase, args [][]byte) resp.Reply {
 	dbIndex, err := strconv.Atoi(string(args[0]))
 	if err != nil {
 		return reply.MakeErrReply("ERR invalid DB index")
