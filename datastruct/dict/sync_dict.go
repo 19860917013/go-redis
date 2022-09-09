@@ -12,6 +12,7 @@ func MakeSyncDict() *SyncDict {
 }
 
 // 下面是对底层 Map 的封装
+// 这个地方的 value 可能是 不同的类型，所以是空接口
 
 func (dict *SyncDict) Get(key string) (val interface{}, exists bool) {
 	// Load 是 Map 中的 Get
